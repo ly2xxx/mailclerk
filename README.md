@@ -4,7 +4,9 @@ MailClerk is a Streamlit-based email automation application that helps you sort,
 
 ## Features
 
-- 📧 **Outlook Integration**: Connect to your local Outlook using win32com.client
+- 🌐 **Dual Email Access**: Choose between web-based (Outlook.com) or desktop Outlook integration
+- 📧 **Browser Handler**: Access Outlook.com emails via Microsoft Graph API (works on any platform)
+- 💻 **Desktop Handler**: Connect to your local Outlook using win32com.client (Windows only)
 - 📋 **Smart Filtering**: Define custom sorting rules based on sender, subject, and keywords
 - 📅 **Date Range Filtering**: Filter emails by today, yesterday, last week, or custom date ranges
 - 📎 **Attachment Handling**: Download emails with all attachments preserved
@@ -39,7 +41,9 @@ MailClerk is a Streamlit-based email automation application that helps you sort,
    pip install -r requirements.txt
    ```
 
-4. **Ensure Microsoft Outlook is installed** on your Windows machine and configured with your email account.
+4. **Choose your email access method**:
+   - **Browser/Web (Recommended)**: Works with Outlook.com accounts, any platform
+   - **Desktop**: Requires Microsoft Outlook installed on Windows
 
 ## Usage
 
@@ -48,24 +52,42 @@ MailClerk is a Streamlit-based email automation application that helps you sort,
    streamlit run app.py
    ```
 
-2. **Connect to Outlook**:
-   - Click "Connect to Outlook" in the sidebar
-   - The app will connect to your local Outlook installation
+2. **Choose Email Handler**:
+   - **Browser/Web**: Select this for Outlook.com, Hotmail, or Office 365 accounts
+   - **Desktop**: Select this if you have Outlook installed locally on Windows
 
-3. **Configure Sorting Rules**:
+3. **Connect to Outlook**:
+   - **For Browser**: Click "Connect to Browser/Web" and complete OAuth authentication in your browser
+   - **For Desktop**: Click "Connect to Desktop Outlook" to connect to your local installation
+
+4. **Configure Sorting Rules**:
    - Go to the "Sorting Rules" tab
    - Define keywords for sender filtering, subject filtering, high priority senders, and exclusions
    - Save your rules for future use
 
-4. **Filter and View Emails**:
+5. **Filter and View Emails**:
    - Select date range in the sidebar
    - Click "Fetch Emails" to retrieve emails based on your filters
    - Review the email list with sender, subject, date, and preview information
 
-5. **Download Emails**:
+6. **Download Emails**:
    - Select emails using checkboxes
    - Click "Download Selected" to save emails to your local drive
    - Each email is saved with metadata, body content, and attachments
+
+## Email Handler Comparison
+
+### 🌐 Browser/Web Handler (Recommended)
+- **Pros**: Works on any platform, no software installation needed, reliable authentication
+- **Cons**: Requires internet connection, OAuth setup
+- **Best for**: Outlook.com, Hotmail, Office 365 personal accounts
+- **Authentication**: OAuth 2.0 via web browser
+
+### 💻 Desktop Handler  
+- **Pros**: Direct access to local Outlook, works offline
+- **Cons**: Windows only, COM registration issues, requires Outlook installation
+- **Best for**: Local Outlook installations, corporate environments
+- **Authentication**: Direct COM interface
 
 ## Configuration
 
@@ -113,10 +135,20 @@ Downloads/MailClerk/
 
 ## System Requirements
 
-- **Operating System**: Windows (required for win32com.client)
+### For Browser/Web Handler (Recommended)
+- **Operating System**: Any (Windows, macOS, Linux)
 - **Python**: 3.8 or higher
-- **Microsoft Outlook**: Installed and configured
+- **Internet Connection**: Required for API access
+- **Email Account**: Outlook.com, Hotmail, or Office 365 personal account
 - **Dependencies**: See requirements.txt
+
+### For Desktop Handler
+- **Operating System**: Windows (required for win32com.client)
+- **Python**: 3.8 or higher  
+- **Microsoft Outlook**: Installed and configured locally
+- **Dependencies**: See requirements.txt
+
+### Both Handlers
 - **Virtual Environment**: Recommended for isolation
 
 ## Troubleshooting
@@ -124,14 +156,15 @@ Downloads/MailClerk/
 ### Common Issues
 
 1. **"Failed to connect to Outlook"** / **COM Error (-2147221005)**:
-   - **First, run the diagnostic tool**: `python outlook_diagnostic.py`
+   - **QUICK FIX**: Run `quick_fix.bat` as Administrator (double-click and select "Run as Administrator")
+   - **ADVANCED FIX**: Run `python fix_outlook_com.py` as Administrator
+   - **DIAGNOSTIC**: Run `python outlook_diagnostic.py` to identify the issue
    - Ensure Microsoft Outlook is installed and running
    - Check that your Outlook profile is configured
    - Try restarting Outlook and the application
    - Verify that your virtual environment is activated
    - **Run as Administrator** (most common solution)
    - Ensure Python and Office have matching architecture (both 32-bit or both 64-bit)
-   - Re-register COM components: `regsvr32 /i /n /s outlctl.dll` (as Administrator)
 
 2. **"No emails found"**:
    - Check your date range filters

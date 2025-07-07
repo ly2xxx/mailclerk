@@ -5,6 +5,7 @@ import os
 import logging
 import re
 from email_handler import OutlookEmailHandler, SecurityError
+from email_browser_handler import BrowserEmailHandler
 from config import EmailConfig, ConfigSecurityError
 
 # Configure logging with security considerations
@@ -61,6 +62,8 @@ def init_session_state():
     """Initialize Streamlit session state variables with security defaults"""
     if 'email_handler' not in st.session_state:
         st.session_state.email_handler = None
+    if 'handler_type' not in st.session_state:
+        st.session_state.handler_type = 'browser'  # Default to browser handler
     if 'emails_df' not in st.session_state:
         st.session_state.emails_df = pd.DataFrame()
     if 'selected_emails' not in st.session_state:
@@ -79,8 +82,37 @@ def setup_sidebar():
     """Setup sidebar with configuration options and security validation"""
     st.sidebar.title("📧 MailClerk Configuration")
     
+    # Email Handler Selection
+    st.sidebar.header("Email Handler")
+    handler_options = {
+        'browser': '🌐 Browser/Web (Outlook.com) - Recommended',
+        'desktop': '💻 Desktop (Outlook COM) - Windows Only'
+    }
+    
+    new_handler_type = st.sidebar.selectbox(
+        "Choose Email Handler:",
+        options=list(handler_options.keys()),
+        format_func=lambda x: handler_options[x],
+        index=0 if st.session_state.handler_type == 'browser' else 1
+    )
+    
+    # If handler type changed, disconnect current handler
+    if new_handler_type != st.session_state.handler_type:
+        if st.session_state.email_handler:
+            st.session_state.email_handler.close_connection()
+        st.session_state.email_handler = None
+        st.session_state.connection_status = False
+        st.session_state.handler_type = new_handler_type
+        st.rerun()
+    
+    # Show handler-specific info
+    if st.session_state.handler_type == 'browser':
+        st.sidebar.info("🌐 Uses Microsoft Graph API\n• Works on any platform\n• No Outlook installation needed\n• Requires web authentication")
+    else:
+        st.sidebar.warning("💻 Requires Windows + Outlook\n• Local Outlook installation\n• COM registration needed\n• May need Administrator rights")
+    
     # Outlook Connection with status indicator
-    st.sidebar.header("Outlook Connection")
+    st.sidebar.header("Email Connection")
     
     # Show connection status
     if st.session_state.connection_status:
@@ -92,40 +124,60 @@ def setup_sidebar():
             st.session_state.connection_status = False
             st.rerun()
     else:
-        if st.sidebar.button("Connect to Outlook"):
+        connect_button_text = "Connect to Browser/Web" if st.session_state.handler_type == 'browser' else "Connect to Desktop Outlook"
+        
+        if st.sidebar.button(connect_button_text):
             try:
-                with st.spinner("Connecting to Outlook..."):
-                    st.session_state.email_handler = OutlookEmailHandler()
+                connection_message = "Connecting to Outlook Web..." if st.session_state.handler_type == 'browser' else "Connecting to Desktop Outlook..."
+                
+                with st.spinner(connection_message):
+                    # Create appropriate handler
+                    if st.session_state.handler_type == 'browser':
+                        st.session_state.email_handler = BrowserEmailHandler()
+                    else:
+                        st.session_state.email_handler = OutlookEmailHandler()
+                    
                     if st.session_state.email_handler.connect():
                         st.session_state.connection_status = True
-                        st.sidebar.success("✅ Connected to Outlook")
-                        logger.info("Successfully connected to Outlook")
+                        st.sidebar.success("✅ Connected successfully!")
+                        logger.info(f"Successfully connected using {st.session_state.handler_type} handler")
                         st.rerun()
                     else:
-                        st.sidebar.error("❌ Failed to connect to Outlook")
-                        logger.error("Failed to connect to Outlook")
+                        st.sidebar.error("❌ Failed to connect")
+                        logger.error(f"Failed to connect using {st.session_state.handler_type} handler")
                         
-                        # Run diagnostics if connection fails
-                        with st.sidebar.expander("🔍 Diagnostics", expanded=True):
-                            diagnosis = st.session_state.email_handler.diagnose_outlook_installation()
-                            
-                            st.write("**Outlook Installation Check:**")
-                            for check, status in diagnosis.items():
-                                icon = "✅" if status else "❌"
-                                readable_name = check.replace('_', ' ').title()
-                                st.write(f"{icon} {readable_name}")
-                            
-                            st.write("**Troubleshooting Steps:**")
-                            if not diagnosis['outlook_installed']:
-                                st.write("• Install Microsoft Outlook")
-                            if not diagnosis['outlook_running']:
-                                st.write("• Start Outlook application")
-                            if not diagnosis['com_registered']:
-                                st.write("• Run as Administrator: `regsvr32 /i /n /s outlctl.dll`")
-                                st.write("• Or repair Office installation")
-                            if not diagnosis['mapi_available']:
-                                st.write("• Restart Outlook and try again")
-                                st.write("• Check Windows permissions")
+                        # Show handler-specific diagnostics
+                        if st.session_state.handler_type == 'desktop':
+                            # Run diagnostics if desktop connection fails
+                            with st.sidebar.expander("🔍 Diagnostics", expanded=True):
+                                diagnosis = st.session_state.email_handler.diagnose_outlook_installation()
+                                
+                                st.write("**Outlook Installation Check:**")
+                                for check, status in diagnosis.items():
+                                    icon = "✅" if status else "❌"
+                                    readable_name = check.replace('_', ' ').title()
+                                    st.write(f"{icon} {readable_name}")
+                                
+                                st.write("**Troubleshooting Steps:**")
+                                if not diagnosis['outlook_installed']:
+                                    st.write("• Install Microsoft Outlook")
+                                if not diagnosis['outlook_running']:
+                                    st.write("• Start Outlook application")
+                                if not diagnosis['com_registered']:
+                                    st.write("• Run as Administrator: `regsvr32 /i /n /s outlctl.dll`")
+                                    st.write("• Or repair Office installation")
+                                if not diagnosis['mapi_available']:
+                                    st.write("• Restart Outlook and try again")
+                                    st.write("• Check Windows permissions")
+                        else:
+                            # Browser connection troubleshooting
+                            with st.sidebar.expander("🔍 Troubleshooting", expanded=True):
+                                st.write("**Common Browser Connection Issues:**")
+                                st.write("• Check internet connection")
+                                st.write("• Ensure popup blocker allows authentication")
+                                st.write("• Try a different browser")
+                                st.write("• Clear browser cache and cookies")
+                                st.write("• Disable browser extensions")
                         
             except SecurityError as e:
                 st.sidebar.error(f"❌ Security error: {str(e)}")

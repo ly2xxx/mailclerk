@@ -8,13 +8,15 @@ import json
 import hashlib
 from pathlib import Path, PurePosixPath
 
+from email_handler_base import EmailHandlerBase
+
 logger = logging.getLogger(__name__)
 
 class SecurityError(Exception):
     """Custom exception for security-related errors"""
     pass
 
-class OutlookEmailHandler:
+class OutlookEmailHandler(EmailHandlerBase):
     """Handle Outlook email operations using win32com.client with enhanced security"""
     
     # Security constants
@@ -31,6 +33,7 @@ class OutlookEmailHandler:
     }
     
     def __init__(self):
+        super().__init__()
         self.outlook = None
         self.namespace = None
         self.inbox = None
@@ -147,7 +150,19 @@ class OutlookEmailHandler:
                     logger.error(f"DispatchEx also failed: {type(e).__name__}")
             
             if not outlook_connected:
+                # Last resort: try with GetActiveObject (if Outlook is already running)
+                try:
+                    import pythoncom
+                    logger.info("Attempting GetActiveObject (Outlook must be running)")
+                    self.outlook = win32.GetActiveObject("Outlook.Application")
+                    outlook_connected = True
+                    logger.info("Connected to existing Outlook instance")
+                except Exception as e:
+                    logger.warning(f"GetActiveObject failed: {type(e).__name__}")
+            
+            if not outlook_connected:
                 logger.error("All Outlook connection methods failed")
+                logger.error("Try running fix_outlook_com.py as Administrator")
                 return False
             
             # Get MAPI namespace
@@ -173,44 +188,6 @@ class OutlookEmailHandler:
         except Exception as e:
             logger.error(f"Unexpected error during Outlook connection: {type(e).__name__}")
             return False
-    
-    def _validate_date_range(self, start_date: datetime.date, end_date: datetime.date) -> bool:
-        """Validate date range for security"""
-        if not isinstance(start_date, datetime.date) or not isinstance(end_date, datetime.date):
-            raise SecurityError("Invalid date format")
-        
-        if start_date > end_date:
-            raise SecurityError("Start date cannot be after end date")
-        
-        # Prevent fetching emails from too far in the past (performance/security)
-        max_days_back = 365  # 1 year
-        if (datetime.now().date() - start_date).days > max_days_back:
-            raise SecurityError(f"Date range cannot exceed {max_days_back} days")
-        
-        return True
-    
-    def _validate_rules(self, rules: Dict) -> Dict:
-        """Validate and sanitize filtering rules"""
-        if not rules:
-            return {}
-        
-        validated_rules = {}
-        
-        for rule_type in ['sender_keywords', 'subject_keywords', 'high_priority_senders', 'exclude_keywords']:
-            if rule_type in rules:
-                keywords = rules[rule_type]
-                if isinstance(keywords, list):
-                    # Validate each keyword
-                    validated_keywords = []
-                    for keyword in keywords[:20]:  # Limit to 20 keywords per type
-                        if isinstance(keyword, str) and len(keyword.strip()) <= 100:
-                            # Basic sanitization - remove control characters
-                            sanitized = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', keyword.strip())
-                            if sanitized:
-                                validated_keywords.append(sanitized.lower())
-                    validated_rules[rule_type] = validated_keywords
-        
-        return validated_rules
     
     def fetch_emails(self, start_date: datetime.date, end_date: datetime.date, 
                     rules: Dict = None) -> List[Dict]:
@@ -442,60 +419,6 @@ class OutlookEmailHandler:
         except Exception:
             return 'Unknown'
     
-    def _is_high_priority(self, email_data: Dict, rules: Dict = None) -> bool:
-        """Determine if email is high priority based on rules"""
-        try:
-            if not rules:
-                return email_data.get('importance', 1) == 2
-            
-            # Check if sender is in high priority list
-            high_priority_senders = rules.get('high_priority_senders', [])
-            sender_email = email_data.get('sender_email', '').lower()
-            sender_name = email_data.get('sender', '').lower()
-            
-            for priority_sender in high_priority_senders:
-                if priority_sender and (priority_sender in sender_email or priority_sender in sender_name):
-                    return True
-            
-            # Check Outlook importance flag
-            return email_data.get('importance', 1) == 2
-            
-        except Exception:
-            return False
-    
-    def _passes_rules(self, email_data: Dict, rules: Dict = None) -> bool:
-        """Check if email passes the filtering rules"""
-        try:
-            if not rules:
-                return True
-            
-            subject = email_data.get('subject', '').lower()
-            sender = email_data.get('sender', '').lower()
-            
-            # Check exclude keywords
-            exclude_keywords = rules.get('exclude_keywords', [])
-            for exclude_keyword in exclude_keywords:
-                if exclude_keyword and (exclude_keyword in subject or exclude_keyword in sender):
-                    return False
-            
-            # Check sender keywords (if specified, email must match at least one)
-            sender_keywords = rules.get('sender_keywords', [])
-            if sender_keywords:
-                sender_match = any(keyword and keyword in sender for keyword in sender_keywords)
-                if not sender_match:
-                    return False
-            
-            # Check subject keywords (if specified, email must match at least one)
-            subject_keywords = rules.get('subject_keywords', [])
-            if subject_keywords:
-                subject_match = any(keyword and keyword in subject for keyword in subject_keywords)
-                if not subject_match:
-                    return False
-            
-            return True
-            
-        except Exception:
-            return False
     
     def download_email(self, email_data: Dict, download_path: str) -> bool:
         """Download email and its attachments to local storage with enhanced security"""
