@@ -110,13 +110,37 @@ The application supports several types of filtering rules:
 
 ```
 mailclerk/
-├── app.py                 # Main Streamlit application
-├── email_handler.py       # Outlook email operations
-├── config.py             # Configuration management
-├── requirements.txt      # Python dependencies
-├── README.md            # This file
-└── mailclerk_config.json # User configuration (created automatically)
+├── app.py                      # Main Streamlit application
+├── email_handler_factory.py    # Dynamic handler discovery and creation
+├── email_handler_base.py       # Abstract base class for email handlers
+├── email_browser_handler.py    # Web/browser-based email handler (Graph API)
+├── email_handler.py            # Desktop Outlook COM handler (Windows only)
+├── config.py                   # Configuration management
+├── requirements.txt            # Python dependencies
+├── README.md                   # This file
+├── CLAUDE.md                   # Development guidance
+├── test_dynamic_handlers.py    # Handler discovery testing
+└── mailclerk_config.json       # User configuration (created automatically)
 ```
+
+## Dynamic Handler System
+
+The application uses a **dynamic handler discovery system** that automatically detects available email handlers:
+
+- **Automatic Detection**: Scans for available handler modules at startup
+- **Platform Filtering**: Only shows handlers compatible with your operating system
+- **Dependency Checking**: Verifies required packages are installed
+- **Modular Design**: Easy to add new email handlers by creating new modules
+- **Runtime Refresh**: Developers can refresh handler list without restarting
+
+### Adding Custom Handlers
+
+To add a new email handler:
+
+1. Create a new file following the pattern `email_*_handler.py`
+2. Inherit from `EmailHandlerBase` 
+3. Implement required abstract methods
+4. The factory will automatically discover and include it
 
 ## Downloaded Email Structure
 

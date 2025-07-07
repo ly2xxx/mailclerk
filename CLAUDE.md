@@ -30,22 +30,41 @@ This is a **Streamlit-based email automation application** that connects to Micr
 
 **Main Application (`app.py`)**:
 - Streamlit web interface with tabs for Email Management, Sorting Rules, and Statistics
+- Dynamic handler selection based on available email handler modules
 - Session state management for connection status, email data, and user selections
 - Security-focused input validation and sanitization throughout
-- Three-column layout with sidebar configuration, main content area, and statistics
+- Adaptive UI that changes based on available handlers
 
-**Email Handler (`email_handler.py`)**:
-- `OutlookEmailHandler` class manages all Outlook COM operations using win32com.client
+**Email Handler Factory (`email_handler_factory.py`)**:
+- `EmailHandlerFactory` class for dynamic discovery and creation of email handlers
+- Automatic platform compatibility checking (Windows-only handlers, cross-platform handlers)
+- Dependency validation to ensure required modules are available
+- Runtime handler refresh capability for development and modularity
+- Supports plugin-like architecture for adding new email handlers
+
+**Email Handler Base (`email_handler_base.py`)**:
+- Abstract base class defining the common interface for all email handlers
+- Shared validation and filtering methods used by all implementations
+- Ensures consistent API across different handler types
+
+**Browser Email Handler (`email_browser_handler.py`)**:
+- `BrowserEmailHandler` class using Microsoft Graph API for web-based email access
+- OAuth 2.0 authentication flow with token management
+- Cross-platform compatibility (Windows, macOS, Linux)
+- Secure API requests with proper error handling and rate limiting
+
+**Desktop Email Handler (`email_handler.py`)**:
+- `OutlookEmailHandler` class for Windows COM-based Outlook integration
 - Secure email fetching with date range validation and content size limits
 - Attachment handling with file extension validation and size restrictions
 - Email downloading with path traversal protection and filename sanitization
-- Built-in security constants: MAX_EMAIL_SIZE_MB (100), MAX_ATTACHMENT_SIZE_MB (50)
+- Built-in diagnostics for COM registration and Outlook installation issues
 
 **Configuration Management (`config.py`)**:
 - `EmailConfig` class handles loading, saving, and validation of user preferences
 - Secure file operations with path validation and size limits
 - Rule validation with keyword sanitization and length restrictions
-- Support for sorting rules, download settings, and Outlook connection parameters
+- Support for sorting rules, download settings, and connection parameters
 
 **Security Architecture**:
 - Comprehensive input sanitization using regex patterns to remove control characters
