@@ -85,9 +85,10 @@ MailClerk is a Streamlit-based email automation application that helps you sort,
 
 ### 💻 Desktop Handler  
 - **Pros**: Direct access to local Outlook, works offline
-- **Cons**: Windows only, COM registration issues, requires Outlook installation
-- **Best for**: Local Outlook installations, corporate environments
+- **Cons**: Windows only, COM registration issues, requires **traditional Office Outlook**
+- **Best for**: Local Office Outlook installations, corporate environments
 - **Authentication**: Direct COM interface
+- **⚠️ Note**: Does **NOT** work with "Outlook for Windows" (Store app)
 
 ## Configuration
 
@@ -120,6 +121,12 @@ mailclerk/
 ├── README.md                   # This file
 ├── CLAUDE.md                   # Development guidance
 ├── test_dynamic_handlers.py    # Handler discovery testing
+├── archive_com/                # COM registration fixes (for traditional Office Outlook)
+│   ├── README_COM_FIXES.md     # Comprehensive COM troubleshooting guide
+│   ├── fix_com_step_by_step.bat # Automated COM registration fix
+│   ├── fix_com_permissions.py  # Advanced Python-based COM fix
+│   ├── outlook_diagnostic.py   # Full diagnostic suite
+│   └── test_com_minimal.py     # Basic COM connection test
 └── mailclerk_config.json       # User configuration (created automatically)
 ```
 
@@ -169,7 +176,7 @@ Downloads/MailClerk/
 ### For Desktop Handler
 - **Operating System**: Windows (required for win32com.client)
 - **Python**: 3.8 or higher  
-- **Microsoft Outlook**: Installed and configured locally
+- **Microsoft Outlook**: **Traditional Office Outlook** (desktop app) - NOT "Outlook for Windows" (Store app)
 - **Dependencies**: See requirements.txt
 
 ### Both Handlers
@@ -180,15 +187,14 @@ Downloads/MailClerk/
 ### Common Issues
 
 1. **"Failed to connect to Outlook"** / **COM Error (-2147221005)**:
-   - **QUICK FIX**: Run `quick_fix.bat` as Administrator (double-click and select "Run as Administrator")
-   - **ADVANCED FIX**: Run `python fix_outlook_com.py` as Administrator
-   - **DIAGNOSTIC**: Run `python outlook_diagnostic.py` to identify the issue
-   - Ensure Microsoft Outlook is installed and running
-   - Check that your Outlook profile is configured
-   - Try restarting Outlook and the application
-   - Verify that your virtual environment is activated
-   - **Run as Administrator** (most common solution)
-   - Ensure Python and Office have matching architecture (both 32-bit or both 64-bit)
+   - **First, check which Outlook you have**: 
+     - "Outlook for Windows" (Store app) → **Use Browser Handler instead**
+     - Traditional Office Outlook → **Use COM fixes below**
+   - **COM FIXES** (for traditional Office Outlook only):
+     - **QUICK FIX**: See `archive_com/README_COM_FIXES.md` for detailed instructions
+     - **Run as Administrator** (most common solution)
+     - Ensure Python and Office have matching architecture (both 32-bit or both 64-bit)
+   - **RECOMMENDED**: Use Browser Handler - works with all Outlook types
 
 2. **"No emails found"**:
    - Check your date range filters
