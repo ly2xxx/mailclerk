@@ -123,11 +123,15 @@ Downloads/MailClerk/
 
 ### Common Issues
 
-1. **"Failed to connect to Outlook"**:
+1. **"Failed to connect to Outlook"** / **COM Error (-2147221005)**:
+   - **First, run the diagnostic tool**: `python outlook_diagnostic.py`
    - Ensure Microsoft Outlook is installed and running
    - Check that your Outlook profile is configured
    - Try restarting Outlook and the application
    - Verify that your virtual environment is activated
+   - **Run as Administrator** (most common solution)
+   - Ensure Python and Office have matching architecture (both 32-bit or both 64-bit)
+   - Re-register COM components: `regsvr32 /i /n /s outlctl.dll` (as Administrator)
 
 2. **"No emails found"**:
    - Check your date range filters

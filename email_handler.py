@@ -34,6 +34,80 @@ class OutlookEmailHandler:
         self.outlook = None
         self.namespace = None
         self.inbox = None
+    
+    def diagnose_outlook_installation(self) -> Dict[str, bool]:
+        """Diagnose Outlook installation and COM registration"""
+        diagnosis = {
+            'outlook_installed': False,
+            'com_registered': False,
+            'outlook_running': False,
+            'mapi_available': False
+        }
+        
+        try:
+            import platform
+            import subprocess
+            import winreg
+            
+            if platform.system() != 'Windows':
+                logger.warning("Outlook diagnosis only available on Windows")
+                return diagnosis
+            
+            # Check if Outlook is installed via registry
+            try:
+                key_paths = [
+                    r"SOFTWARE\Microsoft\Office\16.0\Outlook",  # Office 2016/2019/2021
+                    r"SOFTWARE\Microsoft\Office\15.0\Outlook",  # Office 2013
+                    r"SOFTWARE\Microsoft\Office\14.0\Outlook",  # Office 2010
+                    r"SOFTWARE\Microsoft\Office\Outlook",       # Generic
+                ]
+                
+                for key_path in key_paths:
+                    try:
+                        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path):
+                            diagnosis['outlook_installed'] = True
+                            logger.info(f"Found Outlook installation at: {key_path}")
+                            break
+                    except FileNotFoundError:
+                        continue
+                        
+            except Exception as e:
+                logger.warning(f"Registry check failed: {type(e).__name__}")
+            
+            # Check if Outlook process is running
+            try:
+                result = subprocess.run(
+                    ['tasklist', '/FI', 'IMAGENAME eq OUTLOOK.EXE'],
+                    capture_output=True, text=True, timeout=10
+                )
+                if 'OUTLOOK.EXE' in result.stdout:
+                    diagnosis['outlook_running'] = True
+                    logger.info("Outlook process is running")
+            except Exception as e:
+                logger.warning(f"Process check failed: {type(e).__name__}")
+            
+            # Test COM registration
+            try:
+                import pythoncom
+                clsid = pythoncom.CLSIDFromProgID("Outlook.Application")
+                diagnosis['com_registered'] = True
+                logger.info(f"Outlook COM registration found: {clsid}")
+            except Exception as e:
+                logger.warning(f"COM registration check failed: {type(e).__name__}")
+            
+            # Test MAPI availability
+            try:
+                test_outlook = win32.Dispatch("Outlook.Application")
+                test_namespace = test_outlook.GetNamespace("MAPI")
+                diagnosis['mapi_available'] = True
+                logger.info("MAPI namespace is accessible")
+            except Exception as e:
+                logger.warning(f"MAPI test failed: {type(e).__name__}")
+                
+        except Exception as e:
+            logger.error(f"Diagnosis failed: {type(e).__name__}")
+        
+        return diagnosis
         
     def connect(self) -> bool:
         """Connect to Outlook application with security checks"""
@@ -43,21 +117,61 @@ class OutlookEmailHandler:
             if platform.system() != 'Windows':
                 logger.error("Outlook connection only supported on Windows")
                 return False
-                
-            self.outlook = win32.Dispatch("Outlook.Application")
-            self.namespace = self.outlook.GetNamespace("MAPI")
+            
+            # Try multiple methods to connect to Outlook
+            connection_methods = [
+                "Outlook.Application",
+                "Outlook.Application.16",  # Office 2016/2019/2021
+                "Outlook.Application.15",  # Office 2013
+                "Outlook.Application.14",  # Office 2010
+            ]
+            
+            outlook_connected = False
+            for method in connection_methods:
+                try:
+                    logger.info(f"Attempting to connect using: {method}")
+                    self.outlook = win32.Dispatch(method)
+                    outlook_connected = True
+                    break
+                except Exception as e:
+                    logger.warning(f"Failed to connect with {method}: {type(e).__name__}")
+                    continue
+            
+            if not outlook_connected:
+                # Try alternative connection method
+                try:
+                    logger.info("Attempting DispatchEx connection method")
+                    self.outlook = win32.DispatchEx("Outlook.Application")
+                    outlook_connected = True
+                except Exception as e:
+                    logger.error(f"DispatchEx also failed: {type(e).__name__}")
+            
+            if not outlook_connected:
+                logger.error("All Outlook connection methods failed")
+                return False
+            
+            # Get MAPI namespace
+            try:
+                self.namespace = self.outlook.GetNamespace("MAPI")
+            except Exception as e:
+                logger.error(f"Failed to get MAPI namespace: {type(e).__name__}")
+                return False
             
             # Verify we can access the default folder
-            self.inbox = self.namespace.GetDefaultFolder(6)  # 6 = Inbox
-            
-            # Test connection by attempting to get folder name
-            folder_name = self.inbox.Name
-            logger.info(f"Successfully connected to Outlook folder: {folder_name}")
-            return True
+            try:
+                self.inbox = self.namespace.GetDefaultFolder(6)  # 6 = Inbox
+                
+                # Test connection by attempting to get folder name
+                folder_name = self.inbox.Name
+                logger.info(f"Successfully connected to Outlook folder: {folder_name}")
+                return True
+                
+            except Exception as e:
+                logger.error(f"Failed to access inbox: {type(e).__name__}")
+                return False
             
         except Exception as e:
-            logger.error(f"Failed to connect to Outlook: Secure connection error")
-            # Don't log the actual exception details for security
+            logger.error(f"Unexpected error during Outlook connection: {type(e).__name__}")
             return False
     
     def _validate_date_range(self, start_date: datetime.date, end_date: datetime.date) -> bool:

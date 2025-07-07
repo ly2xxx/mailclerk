@@ -104,12 +104,44 @@ def setup_sidebar():
                     else:
                         st.sidebar.error("❌ Failed to connect to Outlook")
                         logger.error("Failed to connect to Outlook")
+                        
+                        # Run diagnostics if connection fails
+                        with st.sidebar.expander("🔍 Diagnostics", expanded=True):
+                            diagnosis = st.session_state.email_handler.diagnose_outlook_installation()
+                            
+                            st.write("**Outlook Installation Check:**")
+                            for check, status in diagnosis.items():
+                                icon = "✅" if status else "❌"
+                                readable_name = check.replace('_', ' ').title()
+                                st.write(f"{icon} {readable_name}")
+                            
+                            st.write("**Troubleshooting Steps:**")
+                            if not diagnosis['outlook_installed']:
+                                st.write("• Install Microsoft Outlook")
+                            if not diagnosis['outlook_running']:
+                                st.write("• Start Outlook application")
+                            if not diagnosis['com_registered']:
+                                st.write("• Run as Administrator: `regsvr32 /i /n /s outlctl.dll`")
+                                st.write("• Or repair Office installation")
+                            if not diagnosis['mapi_available']:
+                                st.write("• Restart Outlook and try again")
+                                st.write("• Check Windows permissions")
+                        
             except SecurityError as e:
                 st.sidebar.error(f"❌ Security error: {str(e)}")
                 logger.error(f"Security error during connection: {str(e)}")
-            except Exception:
+            except Exception as e:
                 st.sidebar.error("❌ Connection failed")
-                logger.error("Unknown error during Outlook connection")
+                logger.error(f"Unknown error during Outlook connection: {type(e).__name__}")
+                
+                # Show detailed error in expander
+                with st.sidebar.expander("🔍 Error Details", expanded=False):
+                    st.write(f"**Error Type:** {type(e).__name__}")
+                    st.write("**Common Solutions:**")
+                    st.write("• Run application as Administrator")
+                    st.write("• Ensure Outlook is installed and configured")
+                    st.write("• Try restarting Outlook")
+                    st.write("• Check Windows COM registration")
     
     # Download Settings with validation
     st.sidebar.header("Download Settings")
