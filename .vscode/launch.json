@@ -1,0 +1,104 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Streamlit App",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/venv/Scripts/streamlit.exe",
+            "args": [
+                "run",
+                "${workspaceFolder}/app.py",
+                "--server.headless",
+                "true",
+                "--server.port",
+                "8510",
+                "--browser.gatherUsageStats",
+                "false"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": true,
+            "stopOnEntry": false,
+            "windows": {
+                "program": "${workspaceFolder}/venv/Scripts/streamlit.exe"
+            },
+            "linux": {
+                "program": "${workspaceFolder}/venv/bin/streamlit"
+            },
+            "osx": {
+                "program": "${workspaceFolder}/venv/bin/streamlit"
+            }
+        },
+        {
+            "name": "Debug Streamlit App (System Python)",
+            "type": "python",
+            "request": "launch",
+            "module": "streamlit",
+            "args": [
+                "run",
+                "${workspaceFolder}/app.py",
+                "--server.headless",
+                "true",
+                "--server.port",
+                "8501",
+                "--browser.gatherUsageStats",
+                "false"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": true,
+            "stopOnEntry": false
+        },
+        {
+            "name": "Debug Email Handler",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/email_handler.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": true,
+            "stopOnEntry": false
+        },
+        {
+            "name": "Debug Config Module",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/config.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": true,
+            "stopOnEntry": false
+        },
+        {
+            "name": "Debug Tests",
+            "type": "python",
+            "request": "launch",
+            "module": "pytest",
+            "args": [
+                "${workspaceFolder}/test_integration.py",
+                "-v",
+                "--tb=short"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": true,
+            "stopOnEntry": false
+        }
+    ]
+}

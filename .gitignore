@@ -182,11 +182,15 @@ ehthumbs.db
 Thumbs.db
 
 # IDE files
-.vscode/
 .idea/
 *.swp
 *.swo
 *~
+
+# VS Code settings (keep debug config but ignore user settings)
+.vscode/settings.json
+.vscode/tasks.json
+!.vscode/launch.json
 
 # Streamlit specific
 .streamlit/
