@@ -21,16 +21,29 @@ MailClerk is a Streamlit-based email automation application that helps you sort,
    cd mailclerk
    ```
 
-2. **Install dependencies**:
+2. **Create and activate a virtual environment** (recommended):
+   ```bash
+   # Create virtual environment
+   python -m venv venv
+   
+   # Activate virtual environment
+   # On Windows:
+   venv\Scripts\activate
+   
+   # On macOS/Linux (if running via WSL):
+   source venv/bin/activate
+   ```
+
+3. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Ensure Microsoft Outlook is installed** on your Windows machine and configured with your email account.
+4. **Ensure Microsoft Outlook is installed** on your Windows machine and configured with your email account.
 
 ## Usage
 
-1. **Start the application**:
+1. **Start the application** (ensure virtual environment is activated):
    ```bash
    streamlit run app.py
    ```
@@ -104,6 +117,7 @@ Downloads/MailClerk/
 - **Python**: 3.8 or higher
 - **Microsoft Outlook**: Installed and configured
 - **Dependencies**: See requirements.txt
+- **Virtual Environment**: Recommended for isolation
 
 ## Troubleshooting
 
@@ -113,6 +127,7 @@ Downloads/MailClerk/
    - Ensure Microsoft Outlook is installed and running
    - Check that your Outlook profile is configured
    - Try restarting Outlook and the application
+   - Verify that your virtual environment is activated
 
 2. **"No emails found"**:
    - Check your date range filters
