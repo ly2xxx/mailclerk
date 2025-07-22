@@ -1,0 +1,588 @@
+import win32com.client as win32
+from datetime import datetime, timedelta
+import os
+import re
+import logging
+from typing import List, Dict, Optional, Tuple
+import json
+import hashlib
+from pathlib import Path, PurePosixPath
+
+from email_handler_base import EmailHandlerBase
+
+logger = logging.getLogger(__name__)
+
+class SecurityError(Exception):
+    """Custom exception for security-related errors"""
+    pass
+
+class OutlookEmailHandler(EmailHandlerBase):
+    """Handle Outlook email operations using win32com.client with enhanced security"""
+    
+    # Security constants
+    MAX_FILENAME_LENGTH = 255
+    MAX_PATH_LENGTH = 260
+    MAX_EMAIL_SIZE_MB = 100
+    MAX_ATTACHMENT_SIZE_MB = 50
+    
+    # Allowed and blocked file extensions
+    BLOCKED_EXTENSIONS = {
+        '.exe', '.bat', '.cmd', '.com', '.scr', '.pif', '.vbs', '.vbe',
+        '.js', '.jse', '.wsf', '.wsh', '.msi', '.msp', '.hta', '.jar',
+        '.ps1', '.psm1', '.psd1', '.ps1xml', '.pssc', '.psrc', '.cdxml'
+    }
+    
+    def __init__(self):
+        super().__init__()
+        self.outlook = None
+        self.namespace = None
+        self.inbox = None
+    
+    def diagnose_outlook_installation(self) -> Dict[str, bool]:
+        """Diagnose Outlook installation and COM registration"""
+        diagnosis = {
+            'outlook_installed': False,
+            'com_registered': False,
+            'outlook_running': False,
+            'mapi_available': False
+        }
+        
+        try:
+            import platform
+            import subprocess
+            import winreg
+            
+            if platform.system() != 'Windows':
+                logger.warning("Outlook diagnosis only available on Windows")
+                return diagnosis
+            
+            # Check if Outlook is installed via registry
+            try:
+                key_paths = [
+                    r"SOFTWARE\Microsoft\Office\16.0\Outlook",  # Office 2016/2019/2021
+                    r"SOFTWARE\Microsoft\Office\15.0\Outlook",  # Office 2013
+                    r"SOFTWARE\Microsoft\Office\14.0\Outlook",  # Office 2010
+                    r"SOFTWARE\Microsoft\Office\Outlook",       # Generic
+                ]
+                
+                for key_path in key_paths:
+                    try:
+                        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path):
+                            diagnosis['outlook_installed'] = True
+                            logger.info(f"Found Outlook installation at: {key_path}")
+                            break
+                    except FileNotFoundError:
+                        continue
+                        
+            except Exception as e:
+                logger.warning(f"Registry check failed: {type(e).__name__}")
+            
+            # Check if Outlook process is running
+            try:
+                result = subprocess.run(
+                    ['tasklist', '/FI', 'IMAGENAME eq OUTLOOK.EXE'],
+                    capture_output=True, text=True, timeout=10
+                )
+                if 'OUTLOOK.EXE' in result.stdout:
+                    diagnosis['outlook_running'] = True
+                    logger.info("Outlook process is running")
+            except Exception as e:
+                logger.warning(f"Process check failed: {type(e).__name__}")
+            
+            # Test COM registration
+            try:
+                import pythoncom
+                clsid = pythoncom.CLSIDFromProgID("Outlook.Application")
+                diagnosis['com_registered'] = True
+                logger.info(f"Outlook COM registration found: {clsid}")
+            except Exception as e:
+                logger.warning(f"COM registration check failed: {type(e).__name__}")
+            
+            # Test MAPI availability
+            try:
+                test_outlook = win32.Dispatch("Outlook.Application")
+                test_namespace = test_outlook.GetNamespace("MAPI")
+                diagnosis['mapi_available'] = True
+                logger.info("MAPI namespace is accessible")
+            except Exception as e:
+                logger.warning(f"MAPI test failed: {type(e).__name__}")
+                
+        except Exception as e:
+            logger.error(f"Diagnosis failed: {type(e).__name__}")
+        
+        return diagnosis
+        
+    def connect(self) -> bool:
+        """Connect to Outlook application with security checks"""
+        try:
+            # Basic security check - ensure we're on Windows
+            import platform
+            if platform.system() != 'Windows':
+                logger.error("Outlook connection only supported on Windows")
+                return False
+            
+            # Try multiple methods to connect to Outlook
+            connection_methods = [
+                "Outlook.Application",
+                "Outlook.Application.16",  # Office 2016/2019/2021
+                "Outlook.Application.15",  # Office 2013
+                "Outlook.Application.14",  # Office 2010
+            ]
+            
+            outlook_connected = False
+            for method in connection_methods:
+                try:
+                    logger.info(f"Attempting to connect using: {method}")
+                    self.outlook = win32.Dispatch(method)
+                    outlook_connected = True
+                    break
+                except Exception as e:
+                    logger.warning(f"Failed to connect with {method}: {type(e).__name__}")
+                    continue
+            
+            if not outlook_connected:
+                # Try alternative connection method
+                try:
+                    logger.info("Attempting DispatchEx connection method")
+                    self.outlook = win32.DispatchEx("Outlook.Application")
+                    outlook_connected = True
+                except Exception as e:
+                    logger.error(f"DispatchEx also failed: {type(e).__name__}")
+            
+            if not outlook_connected:
+                # Last resort: try with GetActiveObject (if Outlook is already running)
+                try:
+                    import pythoncom
+                    logger.info("Attempting GetActiveObject (Outlook must be running)")
+                    self.outlook = win32.GetActiveObject("Outlook.Application")
+                    outlook_connected = True
+                    logger.info("Connected to existing Outlook instance")
+                except Exception as e:
+                    logger.warning(f"GetActiveObject failed: {type(e).__name__}")
+            
+            if not outlook_connected:
+                logger.error("All Outlook connection methods failed")
+                logger.error("Try running fix_outlook_com.py as Administrator")
+                return False
+            
+            # Get MAPI namespace
+            try:
+                self.namespace = self.outlook.GetNamespace("MAPI")
+            except Exception as e:
+                logger.error(f"Failed to get MAPI namespace: {type(e).__name__}")
+                return False
+            
+            # Verify we can access the default folder
+            try:
+                self.inbox = self.namespace.GetDefaultFolder(6)  # 6 = Inbox
+                
+                # Test connection by attempting to get folder name
+                folder_name = self.inbox.Name
+                logger.info(f"Successfully connected to Outlook folder: {folder_name}")
+                return True
+                
+            except Exception as e:
+                logger.error(f"Failed to access inbox: {type(e).__name__}")
+                return False
+            
+        except Exception as e:
+            logger.error(f"Unexpected error during Outlook connection: {type(e).__name__}")
+            return False
+    
+    def fetch_emails(self, start_date: datetime.date, end_date: datetime.date, 
+                    rules: Dict = None) -> List[Dict]:
+        """Fetch emails based on date range and rules with security validation"""
+        if not self.inbox:
+            raise SecurityError("Not connected to Outlook")
+        
+        try:
+            # Validate inputs
+            self._validate_date_range(start_date, end_date)
+            validated_rules = self._validate_rules(rules)
+            
+            # Convert dates to datetime for filtering
+            start_datetime = datetime.combine(start_date, datetime.min.time())
+            end_datetime = datetime.combine(end_date, datetime.max.time())
+            
+            # Get messages from inbox with security limits
+            messages = self.inbox.Items
+            messages.Sort("[ReceivedTime]", True)  # Sort by received time, descending
+            
+            # Filter by date - use secure date formatting
+            filter_criteria = f"[ReceivedTime] >= '{start_datetime.strftime('%m/%d/%Y %H:%M %p')}' AND [ReceivedTime] <= '{end_datetime.strftime('%m/%d/%Y %H:%M %p')}'"
+            filtered_messages = messages.Restrict(filter_criteria)
+            
+            emails = []
+            max_emails = 1000  # Security limit
+            
+            for i, message in enumerate(filtered_messages):
+                if i >= max_emails:
+                    logger.warning(f"Reached maximum email limit ({max_emails})")
+                    break
+                    
+                try:
+                    email_data = self._extract_email_data(message, validated_rules)
+                    if email_data and self._passes_rules(email_data, validated_rules):
+                        emails.append(email_data)
+                except Exception:
+                    # Log without exposing details
+                    logger.warning(f"Error processing email {i+1}")
+                    continue
+            
+            logger.info(f"Successfully fetched {len(emails)} emails")
+            return emails
+            
+        except SecurityError:
+            raise
+        except Exception as e:
+            logger.error("Error fetching emails")
+            raise SecurityError("Failed to fetch emails securely")
+    
+    def _sanitize_filename(self, filename: str) -> str:
+        """Securely sanitize filename to prevent path traversal and invalid characters"""
+        if not filename or not isinstance(filename, str):
+            return "unnamed_file"
+        
+        # Remove path components and normalize
+        filename = os.path.basename(filename)
+        
+        # Remove or replace dangerous characters
+        # Keep only alphanumeric, spaces, dots, dashes, underscores
+        sanitized = re.sub(r'[^\w\s.-]', '_', filename)
+        
+        # Remove multiple consecutive dots (prevent ../ attacks)
+        sanitized = re.sub(r'\.{2,}', '.', sanitized)
+        
+        # Remove leading/trailing dots and spaces
+        sanitized = sanitized.strip('. ')
+        
+        # Ensure filename is not empty and not too long
+        if not sanitized:
+            sanitized = "unnamed_file"
+        
+        if len(sanitized) > self.MAX_FILENAME_LENGTH:
+            name, ext = os.path.splitext(sanitized)
+            sanitized = name[:self.MAX_FILENAME_LENGTH-len(ext)-10] + "_truncated" + ext
+        
+        return sanitized
+    
+    def _validate_download_path(self, base_path: str) -> str:
+        """Validate and secure the download path"""
+        if not base_path or not isinstance(base_path, str):
+            raise SecurityError("Invalid download path")
+        
+        try:
+            # Normalize and resolve the path
+            path = Path(base_path).resolve()
+            
+            # Ensure path length is reasonable
+            if len(str(path)) > self.MAX_PATH_LENGTH:
+                raise SecurityError("Download path too long")
+            
+            # Ensure the path is within expected boundaries (not root or system dirs)
+            path_str = str(path).lower()
+            forbidden_paths = ['c:\\windows', 'c:\\system32', 'c:\\program files']
+            
+            for forbidden in forbidden_paths:
+                if path_str.startswith(forbidden):
+                    raise SecurityError("Cannot download to system directories")
+            
+            # Create directory if it doesn't exist (with proper error handling)
+            path.mkdir(parents=True, exist_ok=True)
+            
+            # Test write permissions
+            test_file = path / "test_write_permission.tmp"
+            try:
+                test_file.touch()
+                test_file.unlink()
+            except Exception:
+                raise SecurityError("No write permission to download path")
+            
+            return str(path)
+            
+        except SecurityError:
+            raise
+        except Exception:
+            raise SecurityError("Invalid download path")
+    
+    def _validate_file_extension(self, filename: str) -> bool:
+        """Validate file extension for security"""
+        if not filename:
+            return True
+        
+        ext = os.path.splitext(filename.lower())[1]
+        return ext not in self.BLOCKED_EXTENSIONS
+    
+    def _extract_email_data(self, message, rules: Dict = None) -> Optional[Dict]:
+        """Extract relevant data from an email message with security validation"""
+        try:
+            # Check email size
+            email_size = getattr(message, 'Size', 0)
+            if email_size > self.MAX_EMAIL_SIZE_MB * 1024 * 1024:
+                logger.warning(f"Email too large: {email_size} bytes")
+                return None
+            
+            # Safely extract basic information
+            subject = getattr(message, 'Subject', 'No Subject') or 'No Subject'
+            sender_name = getattr(message, 'SenderName', 'Unknown Sender') or 'Unknown Sender'
+            sender_email = getattr(message, 'SenderEmailAddress', '') or ''
+            
+            # Sanitize extracted data
+            subject = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', subject)[:200]
+            sender_name = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', sender_name)[:100]
+            sender_email = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', sender_email)[:100]
+            
+            email_data = {
+                'subject': subject,
+                'sender': sender_name,
+                'sender_email': sender_email,
+                'received_date': self._format_date(getattr(message, 'ReceivedTime', None)),
+                'size': email_size,
+                'has_attachments': self._check_safe_attachments(message),
+                'message_id': hashlib.sha256(str(getattr(message, 'EntryID', '')).encode()).hexdigest()[:16],
+                'conversation_id': hashlib.sha256(str(getattr(message, 'ConversationID', '')).encode()).hexdigest()[:16],
+                'importance': min(max(getattr(message, 'Importance', 1), 0), 2),
+                'preview': self._get_safe_email_preview(message),
+                'category': re.sub(r'[\x00-\x1f\x7f-\x9f]', '', getattr(message, 'Categories', ''))[:50],
+                'message_object': message
+            }
+            
+            # Calculate chain timestamp
+            email_data['chain_timestamp'] = self._get_chain_timestamp(message)
+            
+            # Determine if high priority based on rules
+            email_data['is_high_priority'] = self._is_high_priority(email_data, rules)
+            
+            return email_data
+            
+        except Exception:
+            logger.warning("Error extracting email data")
+            return None
+    
+    def _check_safe_attachments(self, message) -> bool:
+        """Check if email has safe attachments"""
+        try:
+            attachments = getattr(message, 'Attachments', None)
+            if not attachments or len(attachments) == 0:
+                return False
+            
+            # Check each attachment for safety
+            for attachment in attachments:
+                filename = getattr(attachment, 'FileName', '')
+                if filename and not self._validate_file_extension(filename):
+                    logger.warning(f"Blocked unsafe attachment: {filename}")
+                    return False
+                
+                # Check attachment size
+                size = getattr(attachment, 'Size', 0)
+                if size > self.MAX_ATTACHMENT_SIZE_MB * 1024 * 1024:
+                    logger.warning(f"Attachment too large: {size} bytes")
+                    return False
+            
+            return True
+            
+        except Exception:
+            return False
+    
+    def _get_safe_email_preview(self, message) -> str:
+        """Get email body preview safely"""
+        try:
+            body = getattr(message, 'Body', '')
+            if body:
+                # Remove control characters and limit length
+                clean_body = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', body)
+                preview = re.sub(r'\s+', ' ', clean_body.strip())
+                return preview[:200] if len(preview) > 200 else preview
+            return 'No preview available'
+        except Exception:
+            return 'Preview unavailable'
+    
+    def _format_date(self, date_obj) -> str:
+        """Format date object to string safely"""
+        if date_obj:
+            try:
+                if hasattr(date_obj, 'strftime'):
+                    return date_obj.strftime('%Y-%m-%d %H:%M:%S')
+                else:
+                    return str(date_obj)[:19]  # Limit length
+            except Exception:
+                pass
+        return 'Unknown Date'
+    
+    def _get_chain_timestamp(self, message) -> str:
+        """Get the latest timestamp from the email conversation chain"""
+        try:
+            received_time = getattr(message, 'ReceivedTime', None)
+            if received_time:
+                return self._format_date(received_time)
+            return 'Unknown'
+        except Exception:
+            return 'Unknown'
+    
+    
+    def download_email(self, email_data: Dict, download_path: str) -> bool:
+        """Download email and its attachments to local storage with enhanced security"""
+        try:
+            # Validate inputs
+            validated_path = self._validate_download_path(download_path)
+            
+            message = email_data.get('message_object')
+            if not message:
+                logger.error("No message object found for download")
+                return False
+            
+            # Create safe filename
+            subject = email_data.get('subject', 'No_Subject')
+            safe_subject = self._sanitize_filename(subject)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            
+            # Create email-specific folder with length limit
+            folder_name = f"{timestamp}_{safe_subject[:50]}"
+            email_folder = os.path.join(validated_path, folder_name)
+            
+            # Additional path validation
+            if len(email_folder) > self.MAX_PATH_LENGTH:
+                email_folder = os.path.join(validated_path, f"{timestamp}_email")
+            
+            os.makedirs(email_folder, exist_ok=True)
+            
+            # Save email metadata securely
+            metadata = {
+                'subject': email_data.get('subject', '')[:200],
+                'sender': email_data.get('sender', '')[:100],
+                'sender_email': email_data.get('sender_email', '')[:100],
+                'received_date': email_data.get('received_date', ''),
+                'size': email_data.get('size', 0),
+                'has_attachments': email_data.get('has_attachments', False),
+                'importance': email_data.get('importance', 1),
+                'category': email_data.get('category', '')[:50],
+                'chain_timestamp': email_data.get('chain_timestamp', ''),
+                'download_timestamp': datetime.now().isoformat()
+            }
+            
+            metadata_file = os.path.join(email_folder, 'metadata.json')
+            with open(metadata_file, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+            
+            # Save email body securely
+            self._save_email_body(message, email_folder)
+            
+            # Download attachments securely
+            if email_data.get('has_attachments', False):
+                self._download_attachments_safely(message, email_folder)
+            
+            logger.info(f"Successfully downloaded email to: {email_folder}")
+            return True
+            
+        except SecurityError as e:
+            logger.error(f"Security error during download: {str(e)}")
+            return False
+        except Exception:
+            logger.error("Error downloading email")
+            return False
+    
+    def _save_email_body(self, message, email_folder: str):
+        """Save email body safely"""
+        try:
+            # Save plain text body
+            body = getattr(message, 'Body', '')
+            if body:
+                # Clean and limit body content
+                clean_body = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', body)
+                if len(clean_body) > 1024 * 1024:  # 1MB limit
+                    clean_body = clean_body[:1024*1024] + "\n[Content truncated for security]"
+                
+                body_file = os.path.join(email_folder, 'email_body.txt')
+                with open(body_file, 'w', encoding='utf-8') as f:
+                    f.write(clean_body)
+        except Exception:
+            logger.warning("Could not save email body")
+        
+        try:
+            # Save HTML body if available
+            html_body = getattr(message, 'HTMLBody', '')
+            if html_body:
+                # Clean HTML and limit size
+                if len(html_body) > 2 * 1024 * 1024:  # 2MB limit
+                    html_body = html_body[:2*1024*1024] + "\n<!-- Content truncated for security -->"
+                
+                html_file = os.path.join(email_folder, 'email_body.html')
+                with open(html_file, 'w', encoding='utf-8') as f:
+                    f.write(html_body)
+        except Exception:
+            logger.warning("Could not save HTML body")
+    
+    def _download_attachments_safely(self, message, email_folder: str):
+        """Download attachments with security validation"""
+        try:
+            attachments_folder = os.path.join(email_folder, 'attachments')
+            os.makedirs(attachments_folder, exist_ok=True)
+            
+            for i, attachment in enumerate(message.Attachments):
+                try:
+                    filename = getattr(attachment, 'FileName', f'attachment_{i}')
+                    
+                    # Validate file extension
+                    if not self._validate_file_extension(filename):
+                        logger.warning(f"Skipped unsafe attachment: {filename}")
+                        continue
+                    
+                    # Validate attachment size
+                    size = getattr(attachment, 'Size', 0)
+                    if size > self.MAX_ATTACHMENT_SIZE_MB * 1024 * 1024:
+                        logger.warning(f"Skipped large attachment: {filename} ({size} bytes)")
+                        continue
+                    
+                    # Sanitize filename
+                    safe_filename = self._sanitize_filename(filename)
+                    if not safe_filename:
+                        safe_filename = f"attachment_{i}"
+                    
+                    attachment_path = os.path.join(attachments_folder, safe_filename)
+                    
+                    # Ensure path is safe
+                    if len(attachment_path) > self.MAX_PATH_LENGTH:
+                        logger.warning(f"Attachment path too long: {filename}")
+                        continue
+                    
+                    # Save attachment
+                    attachment.SaveAsFile(attachment_path)
+                    logger.info(f"Downloaded attachment: {safe_filename}")
+                    
+                except Exception:
+                    logger.warning(f"Could not download attachment {i}")
+                    
+        except Exception:
+            logger.warning("Error downloading attachments")
+    
+    def get_folder_list(self) -> List[str]:
+        """Get list of available Outlook folders safely"""
+        try:
+            if not self.namespace:
+                return []
+            
+            folders = []
+            for folder in self.namespace.Folders:
+                folder_name = getattr(folder, 'Name', 'Unknown')
+                # Sanitize folder name
+                safe_name = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', folder_name)[:100]
+                if safe_name:
+                    folders.append(safe_name)
+            
+            return folders[:20]  # Limit number of folders returned
+            
+        except Exception:
+            logger.error("Error getting folder list")
+            return []
+    
+    def close_connection(self):
+        """Close the Outlook connection safely"""
+        try:
+            if self.outlook:
+                # Clear references
+                self.outlook = None
+                self.namespace = None
+                self.inbox = None
+                logger.info("Outlook connection closed")
+        except Exception:
+            logger.error("Error closing Outlook connection")

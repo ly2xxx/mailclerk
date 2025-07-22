@@ -1,0 +1,14 @@
+https://github.com/ly2xxx/mailclerk.git
+
+I need to develop a new application to automate emails sorting using my development crew:
+
+Feature: Add streamlit app to automate emails sorting based on user defined rules (like for example, list today's emails with latest email chain timestamp, for user to select which ones to download to harddrive). The app should use existing outlook "https://outlook.live.com/" connection (i.e., SSO maybe? or import win32com.client as win32? I am open to suggestions like Ansible playbook if you feel it's appropriate). Use requirements.txt to manage dependencies.
+Language: Python
+
+Please coordinate this workflow:
+0. Use MCP_DOCKER tools to create a feature/mail-filter branch and generate initial code
+1. Use claude-code-developer to generate initial code that satisfies the feature
+2. Use gemini-qa-agent to review the generated code for security
+3. Use claude-code-developer to implement suggested improvements
+4. Use gemini-qa-agent to generate comprehensive tests
+5. Commit the final implementation, use MCP_DOCKER tools to create pull request to main branch
